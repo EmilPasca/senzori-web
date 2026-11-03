@@ -69,7 +69,11 @@ def api_senzor(senzor_id):
         ).fetchone()
     if row is None:
         return jsonify({"error": "Senzor inexistent"}), 404
-    return jsonify(dict(row))
+    return jsonify({
+        "id": senzor_id,
+        "cod": cod,
+        "locatie": locatie,
+    })
 
 @app.put("/api/senzori/<int:senzor_id>")
 def api_senzor_update(senzor_id):
