@@ -1,0 +1,16 @@
+<!-- templates/senzori.html -->
+ <html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <title>Senzori</title>
+    <link rel="stylesheet" href="../static/style.css">
+
+</head>
+<body>
+<h1>Senzori disponibili</h1>
+<table>
+  <tr><th>Cod</th><th>Locație</th></tr>
+  {% for s in senzori %}
+  <tr><td>{{ s.cod }}</td><td>{{ s.locatie }}</td></tr>
+  {% endfor %}
+</table>

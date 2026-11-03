@@ -1,0 +1,71 @@
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <title>Formular senzor</title>
+    <link rel="stylesheet" href="../static/style.css">
+    <style>
+        #submit-btn {
+            background: linear-gradient(135deg, #4f46e5, #06b6d4);
+            color: #fff;
+            border: none;
+            border-radius: 999px;
+            padding: 0.8rem 1.5rem;
+            font-size: 1rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            cursor: pointer;
+            box-shadow: 0 10px 20px rgba(79, 70, 229, 0.25);
+            transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+        }
+
+        #submit-btn:hover {
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 14px 28px rgba(6, 182, 212, 0.28);
+            filter: brightness(1.08);
+        }
+
+        #submit-btn:active {
+            transform: translateY(0) scale(0.98);
+            box-shadow: 0 6px 14px rgba(79, 70, 229, 0.2);
+        }
+
+        .list-btn {
+            display: inline-block;
+            margin-top: 1rem;
+            background: linear-gradient(135deg, #e2e8f0, #cbd5e1);
+            color: #0f172a;
+            border: none;
+            border-radius: 999px;
+            padding: 0.8rem 1.5rem;
+            font-size: 1rem;
+            font-weight: 700;
+            text-decoration: none;
+            letter-spacing: 0.04em;
+            box-shadow: 0 10px 20px rgba(148, 163, 184, 0.2);
+            transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+        }
+
+        .list-btn:hover {
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 14px 28px rgba(148, 163, 184, 0.25);
+            filter: brightness(1.05);
+        }
+    </style>
+</head>
+<body>
+<h1>Adaugă un senzor</h1>
+
+<div class="sensor-form">
+  <form id="senzor-form" method="post" action="/form">
+    <label>Cod: <input name="cod" required></label>
+    <label>Locație: <input name="locatie" required></label>
+    <button id="submit-btn" type="submit">Adaugă senzor</button>
+  </form>
+</div>
+
+<div class="altele">
+  <a href="/senzori" class="list-btn">Vezi lista senzorilor</a>
+</div>
+
+</body>
+</html>
