@@ -72,6 +72,38 @@ def api_senzor(senzor_id):
     return jsonify(dict(row))
 
 
+@app.put("/api/senzori/<int:senzor_id>")
+def api_senzor_update(senzor_id):
+    with sqlite3.connect("atelier_senzori.db") as con:
+        con.row_factory = sqlite3.Row
+        row = con.execute(
+            "SELECT id, cod, locatie FROM senzori WHERE id = ?",
+            (senzor_id,)
+        ).fetchone()
+    if row is None:
+        return jsonify({"error": "Senzor inexistent"}), 404
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON invalid"}), 400
+    cod = data.get("cod")
+    locatie = data.get("locatie")
+    if not isinstance(cod, str) or not cod.strip():
+        return jsonify({"error": "Cod obligatoriu"}), 400
+    if not isinstance(locatie, str) or not locatie.strip():
+        return jsonify({"error": "Locație obligatorie"}), 400
+
+    cod = cod.strip()
+    locatie = locatie.strip()
+    with sqlite3.connect("atelier_senzori.db") as con:
+        con.execute(
+            "UPDATE senzori SET cod = ?, locatie = ? WHERE id = ?",
+            (cod, locatie, senzor_id),
+        )
+        con.commit()
+
+    return jsonify(dict(row))
+
+
 @app.post("/api/senzori")
 def api_creare():
     data = request.get_json(silent=True)
