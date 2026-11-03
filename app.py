@@ -71,6 +71,17 @@ def api_senzor(senzor_id):
         return jsonify({"error": "Senzor inexistent"}), 404
     return jsonify(dict(row))
 
+@app.put("/api/senzori/<int:senzor_id>")
+def api_senzor_update(senzor_id):
+    with sqlite3.connect("atelier_senzori.db") as con:
+        con.row_factory = sqlite3.Row
+        row = con.execute(
+            "SELECT id, cod, locatie FROM senzori WHERE id = ?",
+            (senzor_id,)
+        ).fetchone()
+    if row is None:
+        return jsonify({"error": "Senzor inexistent"}), 404
+    return jsonify(dict(row))
 
 @app.post("/api/senzori")
 def api_creare():
