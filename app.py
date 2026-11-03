@@ -100,7 +100,7 @@ def api_senzor_update(senzor_id):
         )
         con.commit()
 
-    return jsonify(dict(row))
+    return jsonify({"id": senzor_id, "cod": cod, "locatie": locatie})
 
 @app.post("/api/senzori")
 def api_creare():
