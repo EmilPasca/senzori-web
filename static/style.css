@@ -1,0 +1,7 @@
+body { font-family: Arial, sans-serif; background: #f5f8fb; color: #13243b; }
+main { max-width: 820px; margin: 3rem auto; padding: 1.4rem; background: white; }
+form { display: flex; flex-wrap: wrap; gap: .7rem; margin-bottom: 1.4rem; }
+input { padding: .5rem; border: 1px solid #aac0d0; }
+button { background: #087f8c; color: white; border: 0; padding: .6rem 1rem; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: .7rem; border-bottom: 1px solid #dee5eb; }

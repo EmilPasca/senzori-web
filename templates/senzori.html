@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Registru de senzori</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main>
+    <h1>Lista senzorilor</h1>
+    <form method="post" action="/senzori">
+      <label for="cod">Cod</label>
+      <input id="cod" name="cod" required>
+      <label for="locatie">Locație</label>
+      <input id="locatie" name="locatie" required>
+      <button type="submit">Adaugă senzor</button>
+    </form>
+    <table>
+      <thead><tr><th>Cod</th><th>Locație</th></tr></thead>
+      <tbody>
+        {% for s in senzori %}
+        <tr><td>{{ s.cod }}</td><td>{{ s.locatie }}</td></tr>
+        {% else %}
+        <tr><td colspan="2">Nu există senzori încă.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>
