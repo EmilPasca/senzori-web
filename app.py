@@ -1,11 +1,96 @@
 import sqlite3
-from flask import Flask, jsonify, redirect, render_template, request, url_for
+import os
+import time
+import logging
+
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 
 app = Flask(__name__)
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-only-secret-key")
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+@app.before_request
+def log_request_start():
+    request.start_time = time.perf_counter()
+
+
+@app.after_request
+def log_request_end(response):
+    duration_ms = (time.perf_counter() - request.start_time) * 1000
+    logger.info(
+        "%s %s %s %s %.2fms",
+        request.remote_addr or "-",
+        request.method,
+        request.full_path.rstrip("?"),
+        response.status,
+        duration_ms,
+    )
+    return response
+
+
+@app.teardown_request
+def log_request_error(error):
+    if error is not None:
+        duration_ms = (time.perf_counter() - getattr(request, "start_time", time.perf_counter())) * 1000
+        logger.exception(
+            "%s %s %s failed after %.2fms",
+            request.remote_addr or "-",
+            request.method,
+            request.full_path.rstrip("?"),
+            duration_ms,
+        )
+
+# Demo credentials for this educational application. Use a proper user store in production.
+USERS = {"admin": "admin123"}
 
 @app.get("/")
 def acasa():
-    return "Salut! Aplicația Flask funcționează."
+    return render_template("index.html")
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+
+        if not username or not password:
+            return render_template(
+                "login.html",
+                error="Completează numele de utilizator și parola.",
+                username=username,
+            ), 400
+
+        if USERS.get(username) != password:
+            return render_template(
+                "login.html",
+                error="Nume de utilizator sau parolă incorectă.",
+                username=username,
+            ), 401
+
+        session["username"] = username
+        return redirect(url_for("profil"))
+
+    if "username" in session:
+        return redirect(url_for("profil"))
+    return render_template("login.html")
+
+
+@app.get("/profil")
+def profil():
+    username = session.get("username")
+    if username is None:
+        return redirect(url_for("login"))
+    return render_template("profile.html", username=username)
+
+
+@app.post("/logout")
+def logout():
+    session.pop("username", None)
+    return redirect(url_for("login"))
 
 @app.get("/salut/<nume>")
 def salut(nume):

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profil</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <main class="auth-card">
+        <h1>Profil</h1>
+        <p class="success" role="status">Ești autentificat ca <strong>{{ username }}</strong>.</p>
+        <nav>
+            <a href="{{ url_for('lista_senzori') }}">Lista senzorilor</a>
+            <a href="{{ url_for('afiseaza_formular') }}">Adaugă un senzor</a>
+        </nav>
+        <form method="post" action="{{ url_for('logout') }}">
+            <button type="submit">Deconectare</button>
+        </form>
+    </main>
+</body>
+</html>

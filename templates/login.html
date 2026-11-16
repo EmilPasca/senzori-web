@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autentificare</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <main class="auth-card">
+        <h1>Autentificare</h1>
+        {% if error %}
+        <p class="error" role="alert">{{ error }}</p>
+        {% endif %}
+        <form method="post">
+            <label for="username">Nume de utilizator</label>
+            <input id="username" name="username" value="{{ username or '' }}" required autofocus>
+
+            <label for="password">Parolă</label>
+            <input id="password" name="password" type="password" required>
+
+            <button type="submit">Intră în cont</button>
+        </form>
+        <p class="hint">Cont demo: <strong>admin</strong> / <strong>admin123</strong></p>
+    </main>
+</body>
+</html>
