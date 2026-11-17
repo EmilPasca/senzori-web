@@ -72,6 +72,21 @@ populată automat la prima pornire. Pentru a șterge și baza de date persistent
 docker compose down -v
 ```
 
+## Backup
+
+Aplicația folosește SQLite, deci backup-ul se face cu scriptul:
+
+```bash
+./backup.sh
+```
+
+Implicit, scriptul salvează copia în `./backups`. Pentru o altă bază de date sau
+alt director:
+
+```bash
+DATABASE=/cale/catre/atelier_senzori.db BACKUP_DIR=./backups ./backup.sh
+```
+
 ## Licență
 
 Acest proiect este destinat scopurilor educaționale.
