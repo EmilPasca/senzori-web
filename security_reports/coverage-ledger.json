@@ -1,0 +1,88 @@
+{
+  "profile": "quick",
+  "run_id": "exercitii_03-run-1",
+  "units": [
+    {
+      "id": "web-auth-login",
+      "surface": "web",
+      "boundary": "authentication",
+      "attack_class": "credential-attack",
+      "status": "covered",
+      "assignments": ["hunter-wave-1"],
+      "findings": ["F-002", "F-003", "F-004", "F-007"]
+    },
+    {
+      "id": "web-auth-session",
+      "surface": "web",
+      "boundary": "session-management",
+      "attack_class": "session-forgery",
+      "status": "covered",
+      "assignments": ["hunter-wave-1"],
+      "findings": ["F-004"]
+    },
+    {
+      "id": "web-xss-reflected",
+      "surface": "web",
+      "boundary": "output-encoding",
+      "attack_class": "xss",
+      "status": "covered",
+      "assignments": ["hunter-wave-1"],
+      "findings": ["F-001"]
+    },
+    {
+      "id": "web-csrf-forms",
+      "surface": "web",
+      "boundary": "cross-origin-request",
+      "attack_class": "csrf",
+      "status": "covered",
+      "assignments": ["hunter-wave-1"],
+      "findings": ["NV-002"]
+    },
+    {
+      "id": "web-idor-sensor",
+      "surface": "web",
+      "boundary": "authorization-ownership",
+      "attack_class": "idor",
+      "status": "covered",
+      "assignments": ["hunter-wave-1"],
+      "findings": []
+    },
+    {
+      "id": "deploy-docker",
+      "surface": "deployment",
+      "boundary": "image-build",
+      "attack_class": "secrets-in-image",
+      "status": "covered",
+      "assignments": ["hunter-wave-1"],
+      "findings": ["F-005", "F-006"]
+    },
+    {
+      "id": "deploy-backup",
+      "surface": "deployment",
+      "boundary": "data-at-rest",
+      "attack_class": "data-exposure",
+      "status": "covered",
+      "assignments": ["hunter-wave-1"],
+      "findings": ["F-009"]
+    },
+    {
+      "id": "web-headers",
+      "surface": "web",
+      "boundary": "response-headers",
+      "attack_class": "defense-weakening",
+      "status": "covered",
+      "assignments": ["hunter-wave-1"],
+      "findings": ["F-010"]
+    },
+    {
+      "id": "web-session-cookie-transport",
+      "surface": "web",
+      "boundary": "cookie-security",
+      "attack_class": "session-hijack-transport",
+      "status": "needs_validation",
+      "assignments": ["hunter-wave-1"],
+      "findings": ["NV-001"]
+    }
+  ],
+  "coverage_statement": "Quick profile: all in-scope surfaces covered in one hunter wave. This is a partial pass; a standard or deep run would add independent verifier separation and additional waves."
+}

@@ -87,6 +87,44 @@ alt director:
 DATABASE=/cale/catre/atelier_senzori.db BACKUP_DIR=./backups ./backup.sh
 ```
 
+Backup-ul este pseudonimizat automat: username-urile, codurile senzorilor și
+locațiile sunt înlocuite cu identificatori HMAC, fără modificarea bazei originale.
+Pentru rezultate consistente între backup-uri, setează o cheie secretă:
+
+```bash
+PSEUDONYMIZATION_KEY="o-cheie-lunga-si-secreta" ./backup.sh
+```
+
+Dacă variabila nu este setată, scriptul generează o cheie temporară pentru
+backup-ul curent. Păstrează cheia separat dacă ai nevoie să corelezi pseudonime
+între backup-uri. Pseudonimizarea nu este anonimizare și nu trebuie confundată
+cu criptarea.
+
+## Conectare cu DBeaver
+
+Poți deschide baza de date SQLite în DBeaver:
+
+1. Deschide DBeaver și selectează **New Database Connection**.
+2. Alege **SQLite**.
+3. La **Database file**, selectează:
+
+   ```text
+   /Users/marian/Proj/prog_sis_info/test_edu/exercitii_03/atelier_senzori.db
+   ```
+
+4. Apasă **Test Connection**, apoi **Finish**.
+
+Pentru baza de date folosită de containerul Docker, copiază fișierul din volumul
+containerului în directorul proiectului:
+
+```bash
+docker compose cp flask:/data/atelier_senzori.db ./atelier_senzori-docker.db
+```
+
+Apoi deschide fișierul `atelier_senzori-docker.db` în DBeaver printr-o conexiune
+SQLite. Portul `5432` din `docker-compose.yml` este portul aplicației Flask,
+nu un port PostgreSQL sau SQLite.
+
 ## Licență
 
 Acest proiect este destinat scopurilor educaționale.
