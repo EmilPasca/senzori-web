@@ -19,6 +19,16 @@ Accesează `/login` și folosește contul demo:
 După autentificare, pagina `/profil` confirmă utilizatorul conectat. Cheia de sesiune
 poate fi schimbată prin variabila de mediu `SECRET_KEY`.
 
+Pentru demonstrația IDOR sunt disponibile conturile:
+
+- Alina: `alina` / `alina123` (are senzorii `ALINA-TEMP-01` și `ALINA-UMID-01`)
+- Cosmin: `cosmin` / `cosmin123`
+
+Aplicația verifică proprietarul pentru fiecare senzor accesat prin ID. După autentificarea
+ca Alina, notează ID-ul unui senzor din `/senzori`. Deconectează-te, autentifică-te ca
+Cosmin și deschide `/senzori/<id>` sau `/api/senzori/<id>`. Accesul este refuzat cu
+statusul HTTP `403`, deoarece senzorul îi aparține Alinei.
+
 Utilizatorii sunt păstrați în tabela SQLite `users`, creată automat la pornirea
 aplicației. Pentru versiunea curentă, parolele sunt stocate în format plain text
 doar pentru scop educațional; nu folosi această implementare în producție.

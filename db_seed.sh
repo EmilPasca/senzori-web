@@ -21,7 +21,9 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS senzori (
 	id INTEGER PRIMARY KEY,
 	cod TEXT NOT NULL UNIQUE,
-	locatie TEXT NOT NULL
+	locatie TEXT NOT NULL,
+	owner_user_id INTEGER,
+	FOREIGN KEY (owner_user_id) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS citiri (
@@ -42,7 +44,21 @@ INSERT OR IGNORE INTO users (username, password) VALUES
 	('user07', 'Password07!'),
 	('user08', 'Password08!'),
 	('user09', 'Password09!'),
-	('user10', 'Password10!');
+	('user10', 'Password10!'),
+	('alina', 'alina123'),
+	('cosmin', 'cosmin123');
+
+INSERT OR IGNORE INTO senzori (cod, locatie, owner_user_id)
+SELECT 'ALINA-TEMP-01', 'Apartament Alina', id
+FROM users WHERE username = 'alina';
+
+INSERT OR IGNORE INTO senzori (cod, locatie, owner_user_id)
+SELECT 'ALINA-UMID-01', 'Balcon Alina', id
+FROM users WHERE username = 'alina';
+
+INSERT OR IGNORE INTO senzori (cod, locatie, owner_user_id)
+SELECT 'COSMIN-TEMP-01', 'Apartament Cosmin', id
+FROM users WHERE username = 'cosmin';
 SQL
 
 log "Database schema created or already exists"

@@ -7,10 +7,16 @@
 
 </head>
 <body>
-<h1>Senzori disponibili</h1>
+<h1>Senzorii mei</h1>
 <table>
-  <tr><th>Cod</th><th>Locație</th></tr>
+  <tr><th>ID</th><th>Cod</th><th>Locație</th></tr>
   {% for s in senzori %}
-  <tr><td>{{ s.cod }}</td><td>{{ s.locatie }}</td></tr>
+  <tr>
+    <td><a href="{{ url_for('senzori', senzor_id=s.id) }}">{{ s.id }}</a></td>
+    <td>{{ s.cod }}</td><td>{{ s.locatie }}</td>
+  </tr>
   {% endfor %}
 </table>
+<p>În demonstrație, autentifică-te ca <strong>cosmin</strong>, apoi deschide
+direct ID-ul unui senzor al Alinei (de exemplu <code>/senzori/1</code>).</p>
+<p><a href="{{ url_for('profil') }}">Înapoi la profil</a></p>

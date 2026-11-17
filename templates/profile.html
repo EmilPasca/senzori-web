@@ -14,6 +14,11 @@
             <a href="{{ url_for('lista_senzori') }}">Lista senzorilor</a>
             <a href="{{ url_for('afiseaza_formular') }}">Adaugă un senzor</a>
         </nav>
+        {% if username == "alina" %}
+        <p>Cont demo: <code>alina / alina123</code></p>
+        {% elif username == "cosmin" %}
+        <p>Cont demo: <code>cosmin / cosmin123</code></p>
+        {% endif %}
         <form method="post" action="{{ url_for('logout') }}">
             <button type="submit">Deconectare</button>
         </form>

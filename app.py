@@ -64,10 +64,17 @@ def initialize_database():
             CREATE TABLE IF NOT EXISTS senzori (
                 id INTEGER PRIMARY KEY,
                 cod TEXT NOT NULL UNIQUE,
-                locatie TEXT NOT NULL
+                locatie TEXT NOT NULL,
+                owner_user_id INTEGER,
+                FOREIGN KEY (owner_user_id) REFERENCES users(id)
             )
             """
         )
+        columns = {
+            row[1] for row in con.execute("PRAGMA table_info(senzori)").fetchall()
+        }
+        if "owner_user_id" not in columns:
+            con.execute("ALTER TABLE senzori ADD COLUMN owner_user_id INTEGER")
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS citiri (
@@ -82,6 +89,42 @@ def initialize_database():
         con.execute(
             "INSERT OR IGNORE INTO users (username, password) VALUES (?, ?)",
             ("admin", "admin123"),
+        )
+        con.executemany(
+            "INSERT OR IGNORE INTO users (username, password) VALUES (?, ?)",
+            [
+                ("alina", "alina123"),
+                ("cosmin", "cosmin123"),
+            ],
+        )
+        users = dict(con.execute(
+            "SELECT username, id FROM users WHERE username IN (?, ?)",
+            ("alina", "cosmin"),
+        ).fetchall())
+        demo_sensors = [
+            ("ALINA-TEMP-01", "Apartament Alina", users["alina"]),
+            ("ALINA-UMID-01", "Balcon Alina", users["alina"]),
+            ("COSMIN-TEMP-01", "Apartament Cosmin", users["cosmin"]),
+        ]
+        con.executemany(
+            """
+            INSERT OR IGNORE INTO senzori (cod, locatie, owner_user_id)
+            VALUES (?, ?, ?)
+            """,
+            demo_sensors,
+        )
+        con.execute(
+            """
+            UPDATE senzori
+            SET owner_user_id = (
+                SELECT u.id FROM users u
+                WHERE u.username = CASE
+                    WHEN senzori.cod LIKE 'ALINA-%' THEN 'alina'
+                    WHEN senzori.cod LIKE 'COSMIN-%' THEN 'cosmin'
+                END
+            )
+            WHERE cod LIKE 'ALINA-%' OR cod LIKE 'COSMIN-%'
+            """
         )
         con.commit()
     logger.info("Database initialized")
@@ -155,27 +198,50 @@ def salut(nume):
 
 @app.get("/senzori/<int:senzor_id>")
 def senzori(senzor_id):
-    return f"Senzorul cu ID-ul {senzor_id}."
+    if "username" not in session:
+        return redirect(url_for("login"))
+    sensor = citeste_senzor(senzor_id)
+    if sensor is None:
+        return "Senzor inexistent", 404
+    if sensor["owner_username"] != session["username"]:
+        return "Nu ai acces la acest senzor", 403
+    return render_template("senzor.html", senzor=sensor)
 
 @app.get("/senzori")
 def lista_senzori():
-    print("Se generează lista cu senzori...") 
+    username = session.get("username")
+    if username is None:
+        return redirect(url_for("login"))
+    print("Se generează lista cu senzori...")
     return render_template("senzori.html",
-                           senzori=citeste_senzori_din_baza_de_date())
+                           senzori=citeste_senzori_din_baza_de_date(username))
 
 @app.get("/form")
 def afiseaza_formular():
+    if "username" not in session:
+        return redirect(url_for("login"))
     return render_template("form.html")
 
 @app.post("/form")
 def adauga_senzor():
+    username = session.get("username")
+    if username is None:
+        return redirect(url_for("login"))
     cod = request.form.get("cod", "").strip()
     locatie = request.form.get("locatie", "").strip()
     if not cod or not locatie:
         return "Câmpuri obligatorii", 400
     with sqlite3.connect(DATABASE) as con:
-        con.execute("INSERT INTO senzori(cod, locatie) VALUES (?, ?)",
-                    (cod, locatie))
+        owner_id = con.execute(
+            "SELECT id FROM users WHERE username = ?", (username,)
+        ).fetchone()[0]
+        con.execute(
+            """
+            INSERT INTO senzori(cod, locatie, owner_user_id)
+            VALUES (?, ?, ?)
+            """,
+            (cod, locatie, owner_id),
+        )
         con.commit()
         print(f"Senzorul cu cod '{cod}' și locație '{locatie}' a fost adăugat în baza de date.")
 
@@ -184,36 +250,80 @@ def adauga_senzor():
 
 
 
-def citeste_senzori_din_baza_de_date():
+def citeste_senzori_din_baza_de_date(username=None):
     with sqlite3.connect(DATABASE) as con:
         con.row_factory = sqlite3.Row
-        randuri = con.execute(
-            "SELECT id, cod, locatie FROM senzori ORDER BY id"
-        ).fetchall()
+        if username is None:
+            query = "SELECT id, cod, locatie, owner_user_id FROM senzori ORDER BY id"
+            randuri = con.execute(query).fetchall()
+        else:
+            query = """
+                SELECT s.id, s.cod, s.locatie, s.owner_user_id
+                FROM senzori s
+                JOIN users u ON u.id = s.owner_user_id
+                WHERE u.username = ?
+                ORDER BY s.id
+            """
+            randuri = con.execute(query, (username,)).fetchall()
         print(f"Am citit {len(randuri)} senzori din baza de date.")
     return [dict(r) for r in randuri]
+
+
+def citeste_senzor(senzor_id):
+    with sqlite3.connect(DATABASE) as con:
+        con.row_factory = sqlite3.Row
+        row = con.execute(
+            """
+            SELECT s.id, s.cod, s.locatie, u.username AS owner_username
+            FROM senzori s
+            LEFT JOIN users u ON u.id = s.owner_user_id
+            WHERE s.id = ?
+            """,
+            (senzor_id,),
+        ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def senzorul_apartine_utilizatorului(senzor_id, username):
+    with sqlite3.connect(DATABASE) as con:
+        row = con.execute(
+            """
+            SELECT 1
+            FROM senzori s
+            JOIN users u ON u.id = s.owner_user_id
+            WHERE s.id = ? AND u.username = ?
+            """,
+            (senzor_id, username),
+        ).fetchone()
+    return row is not None
 
 
 # Path-uri pentru API RESTful
 
 @app.get("/api/senzori")
 def api_lista_senzori():
-    return jsonify(citeste_senzori_din_baza_de_date())
+    username = session.get("username")
+    if username is None:
+        return jsonify({"error": "Autentificare necesară"}), 401
+    return jsonify(citeste_senzori_din_baza_de_date(username))
 
 @app.get("/api/senzori/<int:senzor_id>")
 def api_senzor(senzor_id):
-    with sqlite3.connect(DATABASE) as con:
-        con.row_factory = sqlite3.Row
-        row = con.execute(
-            "SELECT id, cod, locatie FROM senzori WHERE id = ?",
-            (senzor_id,)
-        ).fetchone()
-    if row is None:
+    username = session.get("username")
+    if username is None:
+        return jsonify({"error": "Autentificare necesară"}), 401
+    sensor = citeste_senzor(senzor_id)
+    if sensor is None:
         return jsonify({"error": "Senzor inexistent"}), 404
-    return jsonify(dict(row))
+    if not senzorul_apartine_utilizatorului(senzor_id, username):
+        return jsonify({"error": "Nu ai acces la acest senzor"}), 403
+    return jsonify(sensor)
 
 @app.put("/api/senzori/<int:senzor_id>")
 def api_senzor_update(senzor_id):
+    username = session.get("username")
+    if username is None:
+        return jsonify({"error": "Autentificare necesară"}), 401
     with sqlite3.connect(DATABASE) as con:
         con.row_factory = sqlite3.Row
         row = con.execute(
@@ -222,6 +332,8 @@ def api_senzor_update(senzor_id):
         ).fetchone()
     if row is None:
         return jsonify({"error": "Senzor inexistent"}), 404
+    if not senzorul_apartine_utilizatorului(senzor_id, username):
+        return jsonify({"error": "Nu ai acces la acest senzor"}), 403
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "JSON invalid"}), 400
@@ -245,6 +357,9 @@ def api_senzor_update(senzor_id):
 
 @app.post("/api/senzori")
 def api_creare():
+    username = session.get("username")
+    if username is None:
+        return jsonify({"error": "Autentificare necesară"}), 401
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "JSON invalid"}), 400
@@ -258,9 +373,16 @@ def api_creare():
     cod = cod.strip()
     locatie = locatie.strip()
     with sqlite3.connect(DATABASE) as con:
+        owner_id = con.execute(
+            "SELECT id FROM users WHERE username = ?",
+            (username,),
+        ).fetchone()[0]
         cursor = con.execute(
-            "INSERT INTO senzori(cod, locatie) VALUES (?, ?)",
-            (cod, locatie),
+            """
+            INSERT INTO senzori(cod, locatie, owner_user_id)
+            VALUES (?, ?, ?)
+            """,
+            (cod, locatie, owner_id),
         )
         senzor_id = cursor.lastrowid
         con.commit()
@@ -273,6 +395,17 @@ def api_creare():
 
 @app.delete("/api/senzori/<int:senzor_id>")
 def api_stergere(senzor_id):
+    username = session.get("username")
+    if username is None:
+        return jsonify({"error": "Autentificare necesară"}), 401
+    with sqlite3.connect(DATABASE) as con:
+        exists = con.execute(
+            "SELECT 1 FROM senzori WHERE id = ?", (senzor_id,)
+        ).fetchone()
+    if exists is None:
+        return jsonify({"error": "Senzor inexistent"}), 404
+    if not senzorul_apartine_utilizatorului(senzor_id, username):
+        return jsonify({"error": "Nu ai acces la acest senzor"}), 403
     with sqlite3.connect(DATABASE) as con:
         cursor = con.execute(
             "DELETE FROM senzori WHERE id = ?",

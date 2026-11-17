@@ -69,3 +69,32 @@ def test_logout_clears_authenticated_session():
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/login")
     assert client.get("/profil").headers["Location"].endswith("/login")
+
+
+def test_sensor_access_is_limited_to_owner():
+    with sqlite3.connect(DATABASE) as con:
+        alina_sensor_id = con.execute(
+            "SELECT id FROM senzori WHERE cod = 'ALINA-TEMP-01'"
+        ).fetchone()[0]
+
+    client = app.test_client()
+    client.post("/login", data={"username": "cosmin", "password": "cosmin123"})
+
+    html_response = client.get(f"/senzori/{alina_sensor_id}")
+    api_response = client.get(f"/api/senzori/{alina_sensor_id}")
+
+    assert html_response.status_code == 403
+    assert api_response.status_code == 403
+
+
+def test_sensor_owner_can_access_sensor():
+    with sqlite3.connect(DATABASE) as con:
+        alina_sensor_id = con.execute(
+            "SELECT id FROM senzori WHERE cod = 'ALINA-TEMP-01'"
+        ).fetchone()[0]
+
+    client = app.test_client()
+    client.post("/login", data={"username": "alina", "password": "alina123"})
+
+    assert client.get(f"/senzori/{alina_sensor_id}").status_code == 200
+    assert client.get(f"/api/senzori/{alina_sensor_id}").status_code == 200
