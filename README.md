@@ -19,6 +19,10 @@ Accesează `/login` și folosește contul demo:
 După autentificare, pagina `/profil` confirmă utilizatorul conectat. Cheia de sesiune
 poate fi schimbată prin variabila de mediu `SECRET_KEY`.
 
+Utilizatorii sunt păstrați în tabela SQLite `users`, creată automat la pornirea
+aplicației. Pentru versiunea curentă, parolele sunt stocate în format plain text
+doar pentru scop educațional; nu folosi această implementare în producție.
+
 ## Utilizare
 
 1. Conectați senzorul la sistem.
@@ -38,24 +42,25 @@ Ai nevoie de Docker instalat. Din directorul proiectului, construiește imaginea
 docker build -t senzori-web .
 ```
 
-Pornește aplicația pe portul local `5000`:
+Pornește aplicația și baza de date SQLite persistentă pe portul local `5000`:
 
 ```bash
-docker run --name senzori-web-container \
-  -p 5432:5000 \
-  -e SECRET_KEY="schimba-aceasta-cheie" \
-  -v "$(pwd)/atelier_senzori.db:/app/atelier_senzori.db" \
-  senzori-web
+SECRET_KEY="schimba-aceasta-cheie" docker compose up --build
 ```
 
 Aplicația este disponibilă la <http://localhost:5000>. Pentru oprire:
 
 ```bash
-docker stop senzori-web-container
+docker compose down
 ```
 
-Volumul păstrează baza de date între reporniri. Dacă nu ai nevoie de persistență,
-poți elimina opțiunea `-v`. În PowerShell, înlocuiește `$(pwd)` cu `${PWD}`.
+Compose folosește un volum Docker numit `sqlite_data`, montat în `/data`.
+Aplicația folosește `/data/atelier_senzori.db`; tabela `users` este creată și
+populată automat la prima pornire. Pentru a șterge și baza de date persistentă:
+
+```bash
+docker compose down -v
+```
 
 ## Licență
 

@@ -1,0 +1,13 @@
+services:
+  flask:
+    build: .
+    environment:
+      DATABASE: /data/atelier_senzori.db
+      SECRET_KEY: ${SECRET_KEY:-change-this-development-key}
+    ports:
+      - "5432:5000"
+    volumes:
+      - sqlite_data:/data
+
+volumes:
+  sqlite_data:

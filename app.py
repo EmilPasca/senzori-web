@@ -7,6 +7,10 @@ from flask import Flask, jsonify, redirect, render_template, request, session, u
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-only-secret-key")
+DATABASE = os.environ.get(
+    "DATABASE",
+    os.path.join(os.path.dirname(__file__), "atelier_senzori.db"),
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -43,8 +47,47 @@ def log_request_error(error):
             duration_ms,
         )
 
-# Demo credentials for this educational application. Use a proper user store in production.
-USERS = {"admin": "admin123"}
+def initialize_database():
+    logger.info("Initializing database: %s", DATABASE)
+    with sqlite3.connect(DATABASE) as con:
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY,
+                username TEXT NOT NULL UNIQUE,
+                password TEXT NOT NULL
+            )
+            """
+        )
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS senzori (
+                id INTEGER PRIMARY KEY,
+                cod TEXT NOT NULL UNIQUE,
+                locatie TEXT NOT NULL
+            )
+            """
+        )
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS citiri (
+                id INTEGER PRIMARY KEY,
+                senzor_id INTEGER NOT NULL,
+                temperatura REAL NOT NULL,
+                moment TEXT NOT NULL,
+                FOREIGN KEY (senzor_id) REFERENCES senzori(id)
+            )
+            """
+        )
+        con.execute(
+            "INSERT OR IGNORE INTO users (username, password) VALUES (?, ?)",
+            ("admin", "admin123"),
+        )
+        con.commit()
+    logger.info("Database initialized")
+
+
+initialize_database()
 
 @app.get("/")
 def acasa():
@@ -57,14 +100,26 @@ def login():
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
 
+        logger.info("Login attempt for user %r", username or "-")
+
         if not username or not password:
+            logger.warning("Login rejected: missing username or password")
             return render_template(
                 "login.html",
                 error="Completează numele de utilizator și parola.",
                 username=username,
             ), 400
 
-        if USERS.get(username) != password:
+        with sqlite3.connect(DATABASE) as con:
+            query = "SELECT username FROM users WHERE username = ? AND password = ?"
+            logger.info("SQL query: %s", query)
+            user = con.execute(
+                query,
+                (username, password),
+            ).fetchone()
+
+        if user is None:
+            logger.warning("Login failed for user %r", username)
             return render_template(
                 "login.html",
                 error="Nume de utilizator sau parolă incorectă.",
@@ -72,6 +127,7 @@ def login():
             ), 401
 
         session["username"] = username
+        logger.info("Login successful for user %r", username)
         return redirect(url_for("profil"))
 
     if "username" in session:
@@ -117,7 +173,7 @@ def adauga_senzor():
     locatie = request.form.get("locatie", "").strip()
     if not cod or not locatie:
         return "Câmpuri obligatorii", 400
-    with sqlite3.connect("atelier_senzori.db") as con:
+    with sqlite3.connect(DATABASE) as con:
         con.execute("INSERT INTO senzori(cod, locatie) VALUES (?, ?)",
                     (cod, locatie))
         con.commit()
@@ -129,7 +185,7 @@ def adauga_senzor():
 
 
 def citeste_senzori_din_baza_de_date():
-    with sqlite3.connect("atelier_senzori.db") as con:
+    with sqlite3.connect(DATABASE) as con:
         con.row_factory = sqlite3.Row
         randuri = con.execute(
             "SELECT id, cod, locatie FROM senzori ORDER BY id"
@@ -146,7 +202,7 @@ def api_lista_senzori():
 
 @app.get("/api/senzori/<int:senzor_id>")
 def api_senzor(senzor_id):
-    with sqlite3.connect("atelier_senzori.db") as con:
+    with sqlite3.connect(DATABASE) as con:
         con.row_factory = sqlite3.Row
         row = con.execute(
             "SELECT id, cod, locatie FROM senzori WHERE id = ?",
@@ -158,7 +214,7 @@ def api_senzor(senzor_id):
 
 @app.put("/api/senzori/<int:senzor_id>")
 def api_senzor_update(senzor_id):
-    with sqlite3.connect("atelier_senzori.db") as con:
+    with sqlite3.connect(DATABASE) as con:
         con.row_factory = sqlite3.Row
         row = con.execute(
             "SELECT id, cod, locatie FROM senzori WHERE id = ?",
@@ -178,7 +234,7 @@ def api_senzor_update(senzor_id):
 
     cod = cod.strip()
     locatie = locatie.strip()
-    with sqlite3.connect("atelier_senzori.db") as con:
+    with sqlite3.connect(DATABASE) as con:
         con.execute(
             "UPDATE senzori SET cod = ?, locatie = ? WHERE id = ?",
             (cod, locatie, senzor_id),
@@ -201,7 +257,7 @@ def api_creare():
 
     cod = cod.strip()
     locatie = locatie.strip()
-    with sqlite3.connect("atelier_senzori.db") as con:
+    with sqlite3.connect(DATABASE) as con:
         cursor = con.execute(
             "INSERT INTO senzori(cod, locatie) VALUES (?, ?)",
             (cod, locatie),
@@ -217,7 +273,7 @@ def api_creare():
 
 @app.delete("/api/senzori/<int:senzor_id>")
 def api_stergere(senzor_id):
-    with sqlite3.connect("atelier_senzori.db") as con:
+    with sqlite3.connect(DATABASE) as con:
         cursor = con.execute(
             "DELETE FROM senzori WHERE id = ?",
             (senzor_id,),
