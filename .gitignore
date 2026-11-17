@@ -12,6 +12,7 @@ ENV/
 .flaskenv
 instance/
 
+
 # Environment variables and secrets
 .env
 .env.*
@@ -41,3 +42,10 @@ htmlcov/
 .vscode/
 *.swp
 .DS_Store
+
+# Other
+./backups
+backups
+db_seed.sh
+backup.sh
+*.db
