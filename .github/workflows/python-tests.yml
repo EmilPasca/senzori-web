@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pull-requests: write
+      issues: write
 
     steps:
       - name: Check out repository
@@ -53,6 +55,7 @@ jobs:
             --allow-tool='shell(python:*)' \
             --allow-tool='shell(python3:*)' \
             --allow-tool='shell(pytest:*)' \
+            --no-ask-user \
             > code-review-report.md 2>&1
           review_status=$?
           if [ "$review_status" -ne 0 ]; then
@@ -85,6 +88,43 @@ jobs:
           name: clean-code-review-report
           path: code-review-report.md
           if-no-files-found: warn
+
+      - name: Post clean code review as a PR comment
+        if: ${{ github.event_name == 'pull_request' && always() }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- clean-code-review-report -->';
+            const report = fs.existsSync('code-review-report.md')
+              ? fs.readFileSync('code-review-report.md', 'utf8')
+              : 'The AI clean code review did not produce a report.';
+            const body = `${marker}\n## AI clean code review\n\n${report}`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100
+            });
+            const previous = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body?.includes(marker)
+            );
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: previous.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body
+              });
+            }
 
   test:
     runs-on: ubuntu-latest
@@ -210,3 +250,143 @@ jobs:
             pip-audit-report.json
             pip-audit-report.log
           if-no-files-found: warn
+
+  pr-quality-summary:
+    name: Publish test, coverage, and dependency summary
+    if: ${{ github.event_name == 'pull_request' && always() }}
+    needs:
+      - coverage
+      - dependency-audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Download coverage report
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: code-coverage
+          path: reports/coverage
+
+      - name: Download dependency audit report
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: dependency-audit
+          path: reports/dependency
+
+      - name: Build quality summary
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import re
+
+          report = ["# Test, coverage, and dependency summary"]
+
+          coverage_log = pathlib.Path("reports/coverage/coverage-report.log")
+          coverage = "not available"
+          if coverage_log.exists():
+              text = coverage_log.read_text(encoding="utf-8", errors="replace")
+              match = re.search(r"^TOTAL\s+.*\s(\d+(?:\.\d+)?)%\s*$", text, re.MULTILINE)
+              if match:
+                  coverage = f"{match.group(1)}%"
+
+          report.extend([
+              "",
+              "## Coverage",
+              f"- **Total coverage:** {coverage}",
+              "- **Required threshold:** 60%",
+          ])
+          if coverage != "not available":
+              report.append(
+                  "- **Status:** passing"
+                  if float(coverage.rstrip("%")) >= 60
+                  else "- **Status:** below threshold"
+              )
+          else:
+              report.append("- **Status:** report unavailable")
+
+          audit_json = pathlib.Path("reports/dependency/pip-audit-report.json")
+          dependency_status = "report unavailable"
+          vulnerable_packages = 0
+          vulnerability_count = 0
+          if audit_json.exists():
+              try:
+                  packages = json.loads(audit_json.read_text(encoding="utf-8"))
+                  vulnerable = [
+                      package for package in packages
+                      if package.get("vulns")
+                  ]
+                  vulnerable_packages = len(vulnerable)
+                  vulnerability_count = sum(
+                      len(package.get("vulns", []))
+                      for package in packages
+                  )
+                  dependency_status = (
+                      "no known vulnerabilities"
+                      if vulnerability_count == 0
+                      else f"{vulnerability_count} known vulnerabilities"
+                  )
+              except json.JSONDecodeError:
+                  dependency_status = "invalid audit report"
+
+          report.extend([
+              "",
+              "## Dependency audit",
+              f"- **Status:** {dependency_status}",
+              f"- **Vulnerable packages:** {vulnerable_packages}",
+              f"- **Known vulnerabilities:** {vulnerability_count}",
+          ])
+
+          pathlib.Path("pr-quality-summary.md").write_text(
+              "\n".join(report) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Add quality summary to job summary
+        shell: bash
+        run: |
+          {
+            echo "## Test, coverage, and dependency summary"
+            cat pr-quality-summary.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post quality summary as a PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- pr-quality-summary -->';
+            const report = fs.readFileSync('pr-quality-summary.md', 'utf8');
+            const body = `${marker}\n${report}`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100
+            });
+            const previous = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body?.includes(marker)
+            );
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: previous.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body
+              });
+            }
