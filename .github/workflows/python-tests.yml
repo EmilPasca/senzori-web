@@ -75,6 +75,7 @@ jobs:
           set -o pipefail
           python -m pytest -v tests/test_auth.py \
             --cov=app \
+            --cov-fail-under=60 \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
             --cov-report=html:htmlcov \
