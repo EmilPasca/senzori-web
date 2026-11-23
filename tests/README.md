@@ -57,4 +57,18 @@ Pentru raportul de acoperire a codului Flask:
 uv run pytest -v tests/test_auth.py --cov=app --cov-report=term-missing --cov-report=html:htmlcov
 ```
 
+## Rularea testelor k6
+
+Asigură-te că aplicația Flask rulează, apoi execută un test k6:
+
+```bash
+k6 run tests/k6/<nume-test>.js
+```
+
+Pentru rezultate detaliate:
+
+```bash
+k6 run --summary-mode=full tests/k6/<nume-test>.js
+```
+
 
