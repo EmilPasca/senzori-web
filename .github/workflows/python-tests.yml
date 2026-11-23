@@ -5,6 +5,74 @@ on:
   pull_request:
 
 jobs:
+  clean-code-review:
+    name: AI clean code review
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Copilot CLI
+        run: npm install --global @github/copilot
+
+      - name: Determine review range
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin "${{ github.base_ref }}"
+            base_sha="$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+          elif git rev-parse HEAD^ >/dev/null 2>&1; then
+            base_sha="$(git rev-parse HEAD^)"
+          else
+            base_sha="$(git hash-object -t tree /dev/null)"
+          fi
+          echo "BASE_SHA=$base_sha" >> "$GITHUB_ENV"
+
+      - name: Run Clean Code Reviewer agent
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          copilot \
+            --agent code-review \
+            --prompt "Review the change between $BASE_SHA and HEAD in this repository. Start with git diff --stat $BASE_SHA HEAD, then inspect the diff with git diff --name-status $BASE_SHA HEAD and git diff $BASE_SHA HEAD. Follow the Clean Code Reviewer output format and export the complete findings, verification performed, remaining risks, and blocking result as Markdown. Focus on correctness, clean code, SOLID, KISS, DRY, testability, maintainability, and repository conventions. Do not modify files." \
+            --silent \
+            --output-format text \
+            --allow-tool='shell(git:*)' \
+            --allow-tool='shell(python:*)' \
+            --allow-tool='shell(python3:*)' \
+            --allow-tool='shell(pytest:*)' \
+            > code-review-report.md
+
+      - name: Add report to job summary
+        if: always()
+        shell: bash
+        run: |
+          if [ -f code-review-report.md ]; then
+            {
+              echo "## AI clean code review"
+              cat code-review-report.md
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload code review report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clean-code-review-report
+          path: code-review-report.md
+          if-no-files-found: warn
+
   test:
     runs-on: ubuntu-latest
 
