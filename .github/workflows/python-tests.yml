@@ -317,7 +317,18 @@ jobs:
           vulnerability_count = 0
           if audit_json.exists():
               try:
-                  packages = json.loads(audit_json.read_text(encoding="utf-8"))
+                  audit = json.loads(audit_json.read_text(encoding="utf-8"))
+                  packages = (
+                      audit.get("dependencies", [])
+                      if isinstance(audit, dict)
+                      else audit
+                  )
+                  if not isinstance(packages, list):
+                      raise TypeError("pip-audit dependencies must be a JSON list")
+                  packages = [
+                      package for package in packages
+                      if isinstance(package, dict)
+                  ]
                   vulnerable = [
                       package for package in packages
                       if package.get("vulns")
@@ -332,7 +343,7 @@ jobs:
                       if vulnerability_count == 0
                       else f"{vulnerability_count} known vulnerabilities"
                   )
-              except json.JSONDecodeError:
+              except (json.JSONDecodeError, TypeError):
                   dependency_status = "invalid audit report"
 
           report.extend([
