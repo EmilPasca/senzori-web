@@ -43,6 +43,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         shell: bash
         run: |
+          set +e
           copilot \
             --agent code-review \
             --prompt "Review the change between $BASE_SHA and HEAD in this repository. Start with git diff --stat $BASE_SHA HEAD, then inspect the diff with git diff --name-status $BASE_SHA HEAD and git diff $BASE_SHA HEAD. Follow the Clean Code Reviewer output format and export the complete findings, verification performed, remaining risks, and blocking result as Markdown. Focus on correctness, clean code, SOLID, KISS, DRY, testability, maintainability, and repository conventions. Do not modify files." \
@@ -52,7 +53,19 @@ jobs:
             --allow-tool='shell(python:*)' \
             --allow-tool='shell(python3:*)' \
             --allow-tool='shell(pytest:*)' \
-            > code-review-report.md
+            > code-review-report.md 2>&1
+          review_status=$?
+          if [ "$review_status" -ne 0 ]; then
+            {
+              echo "# AI clean code review"
+              echo
+              echo "The Copilot CLI review could not run (exit status $review_status)."
+              echo "The review is advisory and did not block the remaining checks."
+              echo
+              cat code-review-report.md
+            } > code-review-report.tmp
+            mv code-review-report.tmp code-review-report.md
+          fi
 
       - name: Add report to job summary
         if: always()
