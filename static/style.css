@@ -61,3 +61,55 @@ tbody tr:hover {
 a {
         color: #008f95;
 }
+
+.auth-card {
+        max-width: 400px;
+        margin: 4rem auto;
+        padding: 2rem;
+        background: rgba(255, 255, 255, 0.75);
+        border: 2px solid #dbd9fb;
+        border-radius: 14px;
+        box-shadow: 0 12px 30px rgba(20, 15, 70, 0.12);
+}
+
+.auth-card form {
+        display: grid;
+        gap: 0.7rem;
+}
+
+.auth-card input {
+        box-sizing: border-box;
+        width: 100%;
+        padding: 0.7rem;
+        border: 1px solid #a8a6c8;
+        border-radius: 6px;
+}
+
+button {
+        padding: 0.7rem 1rem;
+        border: 0;
+        border-radius: 999px;
+        background: #140f46;
+        color: #fff;
+        cursor: pointer;
+}
+
+.error {
+        color: #9f1239;
+        font-weight: 700;
+}
+
+.success {
+        color: #166534;
+}
+
+.hint {
+        color: #475569;
+        font-size: 0.9rem;
+}
+
+nav {
+        display: flex;
+        gap: 1rem;
+        margin: 1.5rem 0;
+}

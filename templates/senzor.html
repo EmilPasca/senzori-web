@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <title>Senzor {{ senzor.id }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <main class="auth-card">
+        <h1>Detalii senzor</h1>
+        <dl>
+            <dt>ID</dt><dd>{{ senzor.id }}</dd>
+            <dt>Cod</dt><dd>{{ senzor.cod }}</dd>
+            <dt>Locație</dt><dd>{{ senzor.locatie }}</dd>
+            <dt>Proprietar</dt><dd>{{ senzor.owner_username or "nespecificat" }}</dd>
+        </dl>
+        <p><a href="{{ url_for('lista_senzori') }}">Senzorii mei</a></p>
+        <p><a href="{{ url_for('profil') }}">Profil</a></p>
+    </main>
+</body>
+</html>

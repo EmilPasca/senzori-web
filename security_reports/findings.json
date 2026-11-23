@@ -1,0 +1,243 @@
+{
+  "run_id": "exercitii_03-run-1",
+  "findings": [
+    {
+      "id": "F-001",
+      "status": "confirmed",
+      "title": "Reflected XSS in /salut/<nome> via unescaped f-string response",
+      "severity": "high",
+      "cwe": "CWE-79",
+      "lower_trust_principal": "unauthenticated attacker (crafts URL)",
+      "accepted_input": "URL path segment <nome> — no type constraint, any string accepted",
+      "intended_control": "route handler returns informational text to the caller",
+      "crossed_boundary": "attacker-controlled string embedded in HTML document delivered to victim browser",
+      "affected_principal": "any user tricked into clicking attacker-crafted URL",
+      "observed_result": "arbitrary HTML/JS from the URL path executes in victim's browser under the app origin",
+      "evidence": {
+        "file": "app.py",
+        "line": 196,
+        "snippet": "return f\"Salut, {nume}! Bine ai venit în aplicația Flask.\"",
+        "note": "Flask wraps bare string returns as text/html; charset=utf-8. No escaping or sanitization applied. All other templates use Jinja2 auto-escaping and are unaffected."
+      },
+      "fix": "Use flask.escape(nume) or markupsafe.escape(nume), or return plain text via Response(text, mimetype='text/plain'). Simplest: `from markupsafe import escape; return f'Salut, {escape(nume)}!...'`"
+    },
+    {
+      "id": "F-002",
+      "status": "confirmed",
+      "title": "Passwords stored and compared as plaintext — no hashing",
+      "severity": "high",
+      "cwe": "CWE-256",
+      "lower_trust_principal": "attacker with database read access (file theft, backup exfiltration, or image inspection)",
+      "accepted_input": "read access to atelier_senzori.db",
+      "intended_control": "user credentials protect account access",
+      "crossed_boundary": "storage layer → full credential set recovery with zero effort",
+      "affected_principal": "all application users",
+      "observed_result": "every user's plaintext password readable directly from the users table",
+      "evidence": [
+        {
+          "file": "app.py",
+          "lines": "91-98",
+          "snippet": "con.execute(\"INSERT OR IGNORE INTO users (username, password) VALUES (?, ?)\", (\"admin\", \"admin123\"))"
+        },
+        {
+          "file": "app.py",
+          "lines": "157-162",
+          "snippet": "con.execute(\"SELECT username FROM users WHERE username = ? AND password = ?\", (username, password))"
+        }
+      ],
+      "fix": "Replace plaintext storage with bcrypt or argon2-cffi. Hash on registration/seed; verify with the library's check function. Example: `from bcrypt import hashpw, gensalt, checkpw`. Never store or compare the raw password string."
+    },
+    {
+      "id": "F-003",
+      "status": "confirmed",
+      "title": "Admin credentials hardcoded in source and displayed on public login page",
+      "severity": "high",
+      "cwe": "CWE-798",
+      "lower_trust_principal": "unauthenticated visitor",
+      "accepted_input": "HTTP GET /login (no authentication required)",
+      "intended_control": "admin account credentials kept confidential",
+      "crossed_boundary": "source code and unauthenticated page → admin credential disclosure",
+      "affected_principal": "admin account; any user whose credentials are seeded in source",
+      "observed_result": "admin/admin123 visible in app.py source and in the HTML of /login to any visitor; alina/alina123 and cosmin/cosmin123 also in source",
+      "evidence": [
+        {
+          "file": "app.py",
+          "line": 91,
+          "snippet": "(\"admin\", \"admin123\")"
+        },
+        {
+          "file": "templates/login.html",
+          "line": 24,
+          "snippet": "<p class=\"hint\">Cont demo: <strong>admin</strong> / <strong>admin123</strong></p>"
+        }
+      ],
+      "fix": "Remove the hint from login.html. Seed admin and demo accounts from environment variables or a first-run script, never from hardcoded literals. With proper hashing (F-002 fix), seed a hashed value."
+    },
+    {
+      "id": "F-004",
+      "status": "confirmed",
+      "title": "Known fallback SECRET_KEY enables Flask session cookie forgery",
+      "severity": "high",
+      "cwe": "CWE-321",
+      "lower_trust_principal": "attacker who knows the fallback key value",
+      "accepted_input": "HTTP request with a crafted session cookie signed with the known key",
+      "intended_control": "Flask session cookie is signed and tamper-evident",
+      "crossed_boundary": "attacker forges session cookie claiming any username → bypasses all authentication",
+      "affected_principal": "any application user, including admin",
+      "observed_result": "if SECRET_KEY env var is absent at runtime, 'dev-only-secret-key' is used; flask-unsign or itsdangerous can forge a valid cookie with {\"username\": \"admin\"}",
+      "evidence": [
+        {
+          "file": "app.py",
+          "line": 9,
+          "snippet": "app.config[\"SECRET_KEY\"] = os.environ.get(\"SECRET_KEY\", \"dev-only-secret-key\")"
+        },
+        {
+          "file": "docker-compose.yml",
+          "line": 6,
+          "snippet": "SECRET_KEY: ${SECRET_KEY:-change-this-development-key}"
+        }
+      ],
+      "fix": "Remove the fallback literal. Raise a startup error if SECRET_KEY is absent or equals a known weak value. Require a minimum 32-byte random key. Example: `key = os.environ[\"SECRET_KEY\"]; assert len(key) >= 32`."
+    },
+    {
+      "id": "F-005",
+      "status": "confirmed",
+      "title": "FLASK_DEBUG=1 baked into production Dockerfile exposes Werkzeug interactive debugger",
+      "severity": "high",
+      "cwe": "CWE-94",
+      "lower_trust_principal": "any user who can trigger a 500 error",
+      "accepted_input": "any HTTP request that causes an unhandled exception",
+      "intended_control": "production container serves the application without debug tooling",
+      "crossed_boundary": "unauthenticated user → arbitrary Python code execution inside the container via Werkzeug debug console",
+      "affected_principal": "entire container and any mounted secrets or volumes",
+      "observed_result": "debug mode enables the Werkzeug PIN-protected interactive debugger on 500 error pages; PIN is derivable from container filesystem data (documented in CVE-2019-14806 class)",
+      "evidence": {
+        "file": "Dockerfile",
+        "line": 17,
+        "snippet": "ENV FLASK_DEBUG=1"
+      },
+      "fix": "Remove ENV FLASK_DEBUG=1 from the Dockerfile. Set FLASK_DEBUG only in a separate development override (e.g., docker-compose.override.yml) that is never deployed to production."
+    },
+    {
+      "id": "F-006",
+      "status": "confirmed",
+      "title": "SQLite database with plaintext credentials baked into Docker image",
+      "severity": "medium",
+      "cwe": "CWE-312",
+      "lower_trust_principal": "anyone who pulls or inspects the Docker image",
+      "accepted_input": "docker pull / docker image inspect / docker run",
+      "intended_control": "user credentials remain confidential",
+      "crossed_boundary": "image layer inspection → full plaintext credential dump",
+      "affected_principal": "all seeded users (admin, alina, cosmin)",
+      "observed_result": "COPY atelier_senzori.db embeds the populated database into the image; combined with F-002, `sqlite3 atelier_senzori.db 'select * from users'` reveals all plaintext passwords from any copy of the image",
+      "evidence": {
+        "file": "Dockerfile",
+        "line": 9,
+        "snippet": "COPY app.py atelier_senzori.db ./"
+      },
+      "fix": "Remove atelier_senzori.db from the COPY instruction. Initialize the database at container startup from environment-supplied credentials, never from a pre-seeded file committed to the image. If a seed is needed for demos, generate it with hashed passwords at first run."
+    },
+    {
+      "id": "F-007",
+      "status": "confirmed",
+      "title": "No rate limiting on /login enables unlimited brute-force",
+      "severity": "medium",
+      "cwe": "CWE-307",
+      "lower_trust_principal": "unauthenticated attacker",
+      "accepted_input": "unlimited POST /login requests",
+      "intended_control": "failed login attempts are bounded to prevent credential guessing",
+      "crossed_boundary": "attacker iterates passwords at network speed → account takeover",
+      "affected_principal": "any user account",
+      "observed_result": "no counter, lockout, or delay between attempts; combined with F-002 and F-003 the attack is trivial",
+      "evidence": {
+        "file": "app.py",
+        "lines": "140-178",
+        "note": "No Flask-Limiter, no attempt counter, no account lockout, no CAPTCHA."
+      },
+      "fix": "Add Flask-Limiter (e.g., @limiter.limit(\"10/minute\") on the login POST) or implement per-IP and per-username exponential backoff with a counter stored in the session or database."
+    },
+    {
+      "id": "F-008",
+      "status": "confirmed",
+      "title": "Backup script pseudonymizes usernames/locations but preserves plaintext passwords",
+      "severity": "low",
+      "cwe": "CWE-312",
+      "lower_trust_principal": "attacker with backup file access",
+      "accepted_input": "read access to a backup file produced by backup.sh",
+      "intended_control": "backup pseudonymization limits exposure of sensitive user data",
+      "crossed_boundary": "backup consumer → plaintext passwords for all users",
+      "affected_principal": "all application users",
+      "observed_result": "backup.sh pseudonymizes users.username, senzori.cod, and senzori.locatie but does not alter the users.password column, which remains plaintext",
+      "evidence": {
+        "file": "backup.sh",
+        "lines": "49-55",
+        "note": "UPDATE users SET username = ? — only username is replaced; password column untouched."
+      },
+      "fix": "After pseudonymizing usernames, also overwrite the password column with a constant placeholder (e.g., UPDATE users SET password = 'REDACTED'). Note: this only matters if passwords are still stored as plaintext; applying F-002's fix first makes the hash non-reversible by design."
+    },
+    {
+      "id": "F-010",
+      "status": "confirmed",
+      "title": "Missing HTTP security response headers",
+      "severity": "informational",
+      "cwe": "CWE-693",
+      "lower_trust_principal": "attacker leveraging absent browser defences",
+      "accepted_input": "any HTTP response from the application",
+      "intended_control": "browser-enforced defences (CSP, frame-options, type-sniffing) limit attack surface",
+      "crossed_boundary": "absent headers weaken browser-side mitigations for XSS (F-001) and clickjacking",
+      "affected_principal": "users accessing the app via browser",
+      "observed_result": "Flask default responses carry no Content-Security-Policy, X-Frame-Options, X-Content-Type-Options, or Referrer-Policy headers",
+      "evidence": {
+        "file": "app.py",
+        "note": "No after_request hook sets security headers; no Flask-Talisman or equivalent."
+      },
+      "fix": "Add Flask-Talisman or an after_request hook that sets at minimum: Content-Security-Policy: default-src 'self'; X-Frame-Options: DENY; X-Content-Type-Options: nosniff; Referrer-Policy: same-origin."
+    },
+    {
+      "id": "F-011",
+      "status": "confirmed",
+      "title": "Demo credentials displayed to authenticated users on profile page",
+      "severity": "informational",
+      "cwe": "CWE-200",
+      "lower_trust_principal": "authenticated user (alina or cosmin)",
+      "accepted_input": "GET /profil after logging in as alina or cosmin",
+      "intended_control": "credentials remain confidential after login",
+      "crossed_boundary": "authenticated session → credential disclosure in page response",
+      "affected_principal": "alina and cosmin accounts",
+      "observed_result": "profile.html lines 17-21 render 'alina / alina123' or 'cosmin / cosmin123' in the authenticated page body",
+      "evidence": {
+        "file": "templates/profile.html",
+        "lines": "17-21",
+        "snippet": "{% if username == \"alina\" %}<p>Cont demo: <code>alina / alina123</code></p>{% endif %}"
+      },
+      "fix": "Remove the credential hints from the profile template. If demo instructions are needed, place them in a separate internal documentation page, not in the authenticated UI."
+    }
+  ],
+  "needs_validation": [
+    {
+      "id": "NV-001",
+      "title": "Session cookie missing Secure flag; cleartext session hijack depends on deployment",
+      "hypothesis": "Flask's SESSION_COOKIE_SECURE defaults to False. If the app is accessed over HTTP (no TLS-terminating proxy), the signed session cookie is transmitted in cleartext, exposing it to network interception.",
+      "source_trace": {
+        "file": "app.py",
+        "line": 9,
+        "note": "SESSION_COOKIE_SECURE not configured; Flask 3.1.3 default is False."
+      },
+      "missing_fact": "Whether a TLS-terminating reverse proxy is present in front of the app in all deployment environments.",
+      "validation_plan": "Owner confirms: (1) Is HTTPS enforced at the proxy layer for all environments? (2) If not, add SESSION_COOKIE_SECURE=True to app.config and deploy behind HTTPS."
+    },
+    {
+      "id": "NV-002",
+      "title": "CSRF on /form POST — mitigated by Flask 3.1.3 SameSite=Lax default, but not explicitly configured",
+      "hypothesis": "POST /form has no CSRF token. Flask 3.1.3 sets SESSION_COOKIE_SAMESITE='Lax' by default, which prevents cross-origin form submissions from carrying the session cookie in mainstream browsers. However, this is an implicit reliance on a framework default rather than an explicit defence.",
+      "source_trace": {
+        "file": "templates/form.html",
+        "line": 59,
+        "note": "No CSRF token field in the form."
+      },
+      "missing_fact": "Explicit confirmation of Flask 3.1.3 SameSite=Lax default and no override in app config.",
+      "validation_plan": "Owner confirms SESSION_COOKIE_SAMESITE is not overridden. For belt-and-suspenders: add Flask-WTF CSRF tokens or set SameSite=Strict explicitly in app config."
+    }
+  ],
+  "rejected": []
+}

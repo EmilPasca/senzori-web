@@ -16,7 +16,15 @@ def test_create_and_delete_senzor():
 		"locatie": "pytest",
 	}
 
-	create_response = requests.post(
+	session = requests.Session()
+	login_response = session.post(
+		f"{API_URL}/login",
+		data={"username": "alina", "password": "alina123"},
+		timeout=10,
+	)
+	assert login_response.status_code in (200, 302), login_response.text
+
+	create_response = session.post(
 		f"{API_URL}/api/senzori",
 		json=payload,
 		timeout=10,
@@ -27,7 +35,7 @@ def test_create_and_delete_senzor():
 	senzor_id = senzor.get("id")
 	assert senzor_id is not None, "The create response must contain the senzor id"
 
-	delete_response = requests.delete(
+	delete_response = session.delete(
 		f"{API_URL}/api/senzori/{senzor_id}",
 		timeout=10,
 	)
