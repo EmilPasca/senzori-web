@@ -2,11 +2,15 @@ import sqlite3
 import os
 import time
 import logging
+import hmac
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-only-secret-key")
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 DATABASE = os.environ.get(
     "DATABASE",
     os.path.join(os.path.dirname(__file__), "atelier_senzori.db"),
@@ -88,15 +92,31 @@ def initialize_database():
         )
         con.execute(
             "INSERT OR IGNORE INTO users (username, password) VALUES (?, ?)",
-            ("admin", "admin123"),
+            ("admin", generate_password_hash("admin123")),
         )
         con.executemany(
             "INSERT OR IGNORE INTO users (username, password) VALUES (?, ?)",
             [
-                ("alina", "alina123"),
-                ("cosmin", "cosmin123"),
+                ("alina", generate_password_hash("alina123")),
+                ("cosmin", generate_password_hash("cosmin123")),
             ],
         )
+        legacy_users = con.execute(
+            "SELECT id, username, password FROM users WHERE username IN (?, ?, ?)",
+            ("admin", "alina", "cosmin"),
+        ).fetchall()
+        legacy_passwords = {
+            "admin": "admin123",
+            "alina": "alina123",
+            "cosmin": "cosmin123",
+        }
+        for user_id, username, stored_password in legacy_users:
+            if not stored_password.startswith(("scrypt:", "pbkdf2:")):
+                con.execute(
+                    "UPDATE users SET password = ? WHERE id = ?",
+                    (generate_password_hash(legacy_passwords[username]), user_id),
+                )
+
         users = dict(con.execute(
             "SELECT username, id FROM users WHERE username IN (?, ?)",
             ("alina", "cosmin"),
@@ -154,14 +174,27 @@ def login():
             ), 400
 
         with sqlite3.connect(DATABASE) as con:
-            query = "SELECT username FROM users WHERE username = ? AND password = ?"
-            logger.info("SQL query: %s", query)
             user = con.execute(
-                query,
-                (username, password),
+                "SELECT id, username, password FROM users WHERE username = ?",
+                (username,),
             ).fetchone()
 
-        if user is None:
+        password_matches = False
+        if user is not None:
+            stored_password = user[2]
+            if stored_password.startswith(("scrypt:", "pbkdf2:")):
+                password_matches = check_password_hash(stored_password, password)
+            else:
+                password_matches = hmac.compare_digest(stored_password, password)
+                if password_matches:
+                    with sqlite3.connect(DATABASE) as con:
+                        con.execute(
+                            "UPDATE users SET password = ? WHERE id = ?",
+                            (generate_password_hash(password), user[0]),
+                        )
+                        con.commit()
+
+        if not password_matches:
             logger.warning("Login failed for user %r", username)
             return render_template(
                 "login.html",
@@ -235,14 +268,17 @@ def adauga_senzor():
         owner_id = con.execute(
             "SELECT id FROM users WHERE username = ?", (username,)
         ).fetchone()[0]
-        con.execute(
-            """
-            INSERT INTO senzori(cod, locatie, owner_user_id)
-            VALUES (?, ?, ?)
-            """,
-            (cod, locatie, owner_id),
-        )
-        con.commit()
+        try:
+            con.execute(
+                """
+                INSERT INTO senzori(cod, locatie, owner_user_id)
+                VALUES (?, ?, ?)
+                """,
+                (cod, locatie, owner_id),
+            )
+            con.commit()
+        except sqlite3.IntegrityError:
+            return "Codul senzorului există deja", 409
         print(f"Senzorul cu cod '{cod}' și locație '{locatie}' a fost adăugat în baza de date.")
 
     return redirect(url_for("lista_senzori"))
@@ -347,11 +383,14 @@ def api_senzor_update(senzor_id):
     cod = cod.strip()
     locatie = locatie.strip()
     with sqlite3.connect(DATABASE) as con:
-        con.execute(
-            "UPDATE senzori SET cod = ?, locatie = ? WHERE id = ?",
-            (cod, locatie, senzor_id),
-        )
-        con.commit()
+        try:
+            con.execute(
+                "UPDATE senzori SET cod = ?, locatie = ? WHERE id = ?",
+                (cod, locatie, senzor_id),
+            )
+            con.commit()
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Codul senzorului există deja"}), 409
 
     return jsonify({"id": senzor_id, "cod": cod, "locatie": locatie})
 
@@ -377,13 +416,16 @@ def api_creare():
             "SELECT id FROM users WHERE username = ?",
             (username,),
         ).fetchone()[0]
-        cursor = con.execute(
-            """
-            INSERT INTO senzori(cod, locatie, owner_user_id)
-            VALUES (?, ?, ?)
-            """,
-            (cod, locatie, owner_id),
-        )
+        try:
+            cursor = con.execute(
+                """
+                INSERT INTO senzori(cod, locatie, owner_user_id)
+                VALUES (?, ?, ?)
+                """,
+                (cod, locatie, owner_id),
+            )
+        except sqlite3.IntegrityError:
+            return jsonify({"error": "Codul senzorului există deja"}), 409
         senzor_id = cursor.lastrowid
         con.commit()
 

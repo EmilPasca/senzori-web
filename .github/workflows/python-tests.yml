@@ -5,6 +5,127 @@ on:
   pull_request:
 
 jobs:
+  clean-code-review:
+    name: AI clean code review
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Copilot CLI
+        run: npm install --global @github/copilot
+
+      - name: Determine review range
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin "${{ github.base_ref }}"
+            base_sha="$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+          elif git rev-parse HEAD^ >/dev/null 2>&1; then
+            base_sha="$(git rev-parse HEAD^)"
+          else
+            base_sha="$(git hash-object -t tree /dev/null)"
+          fi
+          echo "BASE_SHA=$base_sha" >> "$GITHUB_ENV"
+
+      - name: Run Clean Code Reviewer agent
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set +e
+          copilot \
+            --agent code-review \
+            --prompt "Review the change between $BASE_SHA and HEAD in this repository. Start with git diff --stat $BASE_SHA HEAD, then inspect the diff with git diff --name-status $BASE_SHA HEAD and git diff $BASE_SHA HEAD. Follow the Clean Code Reviewer output format and export the complete findings, verification performed, remaining risks, and blocking result as Markdown. Focus on correctness, clean code, SOLID, KISS, DRY, testability, maintainability, and repository conventions. Do not modify files." \
+            --silent \
+            --output-format text \
+            --allow-tool='shell(git:*)' \
+            --allow-tool='shell(python:*)' \
+            --allow-tool='shell(python3:*)' \
+            --allow-tool='shell(pytest:*)' \
+            --no-ask-user \
+            > code-review-report.md 2>&1
+          review_status=$?
+          if [ "$review_status" -ne 0 ]; then
+            {
+              echo "# AI clean code review"
+              echo
+              echo "The Copilot CLI review could not run (exit status $review_status)."
+              echo "The review is advisory and did not block the remaining checks."
+              echo
+              cat code-review-report.md
+            } > code-review-report.tmp
+            mv code-review-report.tmp code-review-report.md
+          fi
+
+      - name: Add report to job summary
+        if: always()
+        shell: bash
+        run: |
+          if [ -f code-review-report.md ]; then
+            {
+              echo "## AI clean code review"
+              cat code-review-report.md
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload code review report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clean-code-review-report
+          path: code-review-report.md
+          if-no-files-found: warn
+
+      - name: Post clean code review as a PR comment
+        if: ${{ github.event_name == 'pull_request' && always() }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- clean-code-review-report -->';
+            const report = fs.existsSync('code-review-report.md')
+              ? fs.readFileSync('code-review-report.md', 'utf8')
+              : 'The AI clean code review did not produce a report.';
+            const body = `${marker}\n## AI clean code review\n\n${report}`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100
+            });
+            const previous = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body?.includes(marker)
+            );
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: previous.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body
+              });
+            }
+
   test:
     runs-on: ubuntu-latest
 
@@ -75,6 +196,7 @@ jobs:
           set -o pipefail
           python -m pytest -v tests/test_auth.py \
             --cov=app \
+            --cov-fail-under=60 \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
             --cov-report=html:htmlcov \
@@ -90,3 +212,192 @@ jobs:
             htmlcov/
             coverage-report.log
           if-no-files-found: error
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip -r requirements.txt
+
+      - name: Audit Python dependencies
+        run: |
+          set -o pipefail
+          python -m pip_audit \
+            --requirement requirements.txt \
+            --format json \
+            --output pip-audit-report.json \
+            --progress-spinner off \
+            2>&1 | tee pip-audit-report.log
+
+      - name: Upload dependency audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit
+          path: |
+            pip-audit-report.json
+            pip-audit-report.log
+          if-no-files-found: warn
+
+  pr-quality-summary:
+    name: Publish test, coverage, and dependency summary
+    if: ${{ github.event_name == 'pull_request' && always() }}
+    needs:
+      - coverage
+      - dependency-audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Download coverage report
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: code-coverage
+          path: reports/coverage
+
+      - name: Download dependency audit report
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: dependency-audit
+          path: reports/dependency
+
+      - name: Build quality summary
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import re
+
+          report = ["# Test, coverage, and dependency summary"]
+
+          coverage_log = pathlib.Path("reports/coverage/coverage-report.log")
+          coverage = "not available"
+          if coverage_log.exists():
+              text = coverage_log.read_text(encoding="utf-8", errors="replace")
+              match = re.search(r"^TOTAL\s+.*\s(\d+(?:\.\d+)?)%\s*$", text, re.MULTILINE)
+              if match:
+                  coverage = f"{match.group(1)}%"
+
+          report.extend([
+              "",
+              "## Coverage",
+              f"- **Total coverage:** {coverage}",
+              "- **Required threshold:** 60%",
+          ])
+          if coverage != "not available":
+              report.append(
+                  "- **Status:** passing"
+                  if float(coverage.rstrip("%")) >= 60
+                  else "- **Status:** below threshold"
+              )
+          else:
+              report.append("- **Status:** report unavailable")
+
+          audit_json = pathlib.Path("reports/dependency/pip-audit-report.json")
+          dependency_status = "report unavailable"
+          vulnerable_packages = 0
+          vulnerability_count = 0
+          if audit_json.exists():
+              try:
+                  audit = json.loads(audit_json.read_text(encoding="utf-8"))
+                  packages = (
+                      audit.get("dependencies", [])
+                      if isinstance(audit, dict)
+                      else audit
+                  )
+                  if not isinstance(packages, list):
+                      raise TypeError("pip-audit dependencies must be a JSON list")
+                  packages = [
+                      package for package in packages
+                      if isinstance(package, dict)
+                  ]
+                  vulnerable = [
+                      package for package in packages
+                      if package.get("vulns")
+                  ]
+                  vulnerable_packages = len(vulnerable)
+                  vulnerability_count = sum(
+                      len(package.get("vulns", []))
+                      for package in packages
+                  )
+                  dependency_status = (
+                      "no known vulnerabilities"
+                      if vulnerability_count == 0
+                      else f"{vulnerability_count} known vulnerabilities"
+                  )
+              except (json.JSONDecodeError, TypeError):
+                  dependency_status = "invalid audit report"
+
+          report.extend([
+              "",
+              "## Dependency audit",
+              f"- **Status:** {dependency_status}",
+              f"- **Vulnerable packages:** {vulnerable_packages}",
+              f"- **Known vulnerabilities:** {vulnerability_count}",
+          ])
+
+          pathlib.Path("pr-quality-summary.md").write_text(
+              "\n".join(report) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Add quality summary to job summary
+        shell: bash
+        run: |
+          {
+            echo "## Test, coverage, and dependency summary"
+            cat pr-quality-summary.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post quality summary as a PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- pr-quality-summary -->';
+            const report = fs.readFileSync('pr-quality-summary.md', 'utf8');
+            const body = `${marker}\n${report}`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100
+            });
+            const previous = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body?.includes(marker)
+            );
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: previous.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body
+              });
+            }
