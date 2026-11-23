@@ -207,29 +207,22 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - name: Install Python dependencies
-        run: python -m pip install --upgrade pip -r requirements.txt
-
       - name: Set up k6
         uses: grafana/setup-k6-action@v1
 
-      - name: Start Flask API
+      - name: Build and start the Flask container
         run: |
-          flask --app app run --host=127.0.0.1 --port=8001 > flask.log 2>&1 &
-          echo $! > flask.pid
+          docker compose up --detach --build flask
+
+      - name: Wait for Flask container
+        run: |
           for i in $(seq 1 30); do
             if curl --fail --silent http://127.0.0.1:8001/login >/dev/null; then
               exit 0
             fi
             sleep 1
           done
-          cat flask.log
+          docker compose logs flask
           exit 1
 
       - name: Run k6 login performance test
@@ -242,12 +235,11 @@ jobs:
             --out json=k6-results.json \
             2>&1 | tee k6-report.log
 
-      - name: Stop Flask API
+      - name: Stop Flask container
         if: always()
         run: |
-          if [ -f flask.pid ]; then
-            kill "$(cat flask.pid)" 2>/dev/null || true
-          fi
+          docker compose logs flask > flask-container.log 2>&1 || true
+          docker compose down --volumes --remove-orphans
 
       - name: Add k6 report to job summary
         if: always()
@@ -267,6 +259,7 @@ jobs:
             k6-report.log
             k6-summary.json
             k6-results.json
+            flask-container.log
           if-no-files-found: warn
 
   test:
@@ -547,20 +540,27 @@ jobs:
           k6_status = "report unavailable"
           k6_p95 = "unavailable"
           k6_error_rate = "unavailable"
+          k6_request_count = "unavailable"
           if k6_summary.exists():
               try:
                   summary = json.loads(k6_summary.read_text(encoding="utf-8"))
                   metrics = summary.get("metrics", {})
-                  duration = metrics.get("http_req_duration", {}).get("values", {})
-                  failed = metrics.get("http_req_failed", {}).get("values", {})
-                  k6_p95 = f"{duration.get('p(95)', 0):.2f} ms"
-                  k6_error_rate = f"{100 * failed.get('rate', 0):.2f}%"
+                  duration = metrics.get("http_req_duration", {})
+                  failed = metrics.get("http_req_failed", {})
+                  requests = metrics.get("http_reqs", {})
+
+                  p95 = float(duration.get("p(95)", 0))
+                  error_rate = float(failed.get("value", 1))
+                  request_count = int(requests.get("count", 0))
+
+                  k6_p95 = f"{p95:.2f} ms"
+                  k6_error_rate = f"{100 * error_rate:.2f}%"
                   k6_status = (
                       "passing"
-                      if duration.get("p(95)", float("inf")) < 500
-                      and failed.get("rate", 1) < 0.01
+                      if p95 < 500 and error_rate < 0.01
                       else "threshold exceeded"
                   )
+                  k6_request_count = str(request_count)
               except (json.JSONDecodeError, TypeError):
                   k6_status = "invalid performance report"
 
@@ -570,6 +570,7 @@ jobs:
               f"- **Status:** {k6_status}",
               f"- **P95 response time:** {k6_p95}",
               f"- **HTTP failure rate:** {k6_error_rate}",
+              f"- **Requests:** {k6_request_count}",
           ])
 
           pathlib.Path("pr-quality-summary.md").write_text(
