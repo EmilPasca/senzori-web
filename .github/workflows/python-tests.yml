@@ -126,6 +126,77 @@ jobs:
               });
             }
 
+  python-lint:
+    name: Python lint, modernization, and security
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Install lint tools
+        run: python -m pip install --upgrade ruff bandit
+
+      - name: Run Ruff style and modernization checks
+        id: ruff
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          ruff format --check app.py test.py main.py tests 2>&1 | tee ruff-format.log
+          format_status=${PIPESTATUS[0]}
+          ruff check app.py test.py main.py tests --output-format=concise 2>&1 | tee ruff-check.log
+          check_status=${PIPESTATUS[0]}
+          echo "format_status=$format_status" >> "$GITHUB_OUTPUT"
+          echo "check_status=$check_status" >> "$GITHUB_OUTPUT"
+
+      - name: Run Bandit security scan
+        id: bandit
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          bandit -r app.py test.py main.py tests -ll -f json -o bandit-report.json 2>&1 | tee bandit-report.log
+          echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Add lint summary to job summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Python lint, modernization, and security"
+            echo
+            echo "- Ruff formatting status: ${{ steps.ruff.outputs.format_status }}"
+            echo "- Ruff lint status: ${{ steps.ruff.outputs.check_status }}"
+            echo "- Bandit status: ${{ steps.bandit.outputs.status }}"
+            echo
+            echo "### Ruff style report"
+            cat ruff-check.log ruff-format.log 2>/dev/null || true
+            echo
+            echo "### Bandit security report"
+            cat bandit-report.log 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-lint-report
+          path: |
+            ruff-check.log
+            ruff-format.log
+            bandit-report.json
+            bandit-report.log
+          if-no-files-found: warn
+
+      - name: Fail on lint findings
+        if: steps.ruff.outputs.format_status != '0' || steps.ruff.outputs.check_status != '0' || steps.bandit.outputs.status != '0'
+        run: exit 1
+
   test:
     runs-on: ubuntu-latest
 
@@ -257,6 +328,7 @@ jobs:
     needs:
       - coverage
       - dependency-audit
+      - python-lint
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -270,6 +342,13 @@ jobs:
         with:
           name: code-coverage
           path: reports/coverage
+
+      - name: Download Python lint report
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: python-lint-report
+          path: reports/lint
 
       - name: Download dependency audit report
         continue-on-error: true
@@ -352,6 +431,36 @@ jobs:
               f"- **Status:** {dependency_status}",
               f"- **Vulnerable packages:** {vulnerable_packages}",
               f"- **Known vulnerabilities:** {vulnerability_count}",
+          ])
+
+          ruff_check = pathlib.Path("reports/lint/ruff-check.log")
+          ruff_format = pathlib.Path("reports/lint/ruff-format.log")
+          bandit_json = pathlib.Path("reports/lint/bandit-report.json")
+          ruff_issues = 0
+          if ruff_check.exists():
+              ruff_issues = sum(
+                  1 for line in ruff_check.read_text(encoding="utf-8", errors="replace").splitlines()
+                  if re.search(r"\b(?:F|E|I|UP|B|S)\d+\b", line)
+              )
+          format_clean = not (
+              ruff_format.exists()
+              and "would be reformatted" in ruff_format.read_text(encoding="utf-8", errors="replace")
+          )
+
+          bandit_issues = 0
+          if bandit_json.exists():
+              try:
+                  bandit = json.loads(bandit_json.read_text(encoding="utf-8"))
+                  bandit_issues = len(bandit.get("results", []))
+              except json.JSONDecodeError:
+                  bandit_issues = -1
+
+          report.extend([
+              "",
+              "## Python lint",
+              f"- **Ruff findings:** {ruff_issues}",
+              f"- **Formatting:** {'clean' if format_clean else 'changes requested'}",
+              f"- **Bandit findings:** {'unavailable' if bandit_issues == -1 else bandit_issues}",
           ])
 
           pathlib.Path("pr-quality-summary.md").write_text(

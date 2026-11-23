@@ -10,7 +10,9 @@ def main():
         response = requests.get(url, timeout=5)
         response.raise_for_status()
         date = response.json()
-        print(f"Temperatura pentru Baia Mare, România: {date['current']['temperature_2m']} °C")
+        print(
+            f"Temperatura pentru Baia Mare, România: {date['current']['temperature_2m']} °C"
+        )
     except requests.RequestException as exc:
         print("Eroare la apelul API:", exc)
 
