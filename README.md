@@ -125,6 +125,31 @@ Apoi deschide fișierul `atelier_senzori-docker.db` în DBeaver printr-o conexiu
 SQLite. Portul `5432` din `docker-compose.yml` este portul aplicației Flask,
 nu un port PostgreSQL sau SQLite.
 
+## Raport de securitate
+
+Rapoarte și documente de delimitare pentru auditarea aplicației:
+
+- [Raport sumar](security_reports/REPORT.md)
+- [Detalii asupra constatărilor](security_reports/FINDINGS-DETAIL.md)
+- [Elemente de validat](security_reports/NEEDS-VALIDATION.md)
+- [Arhitectura aplicației](security_reports/architecture.md)
+- [Inventarul dependențelor](security_reports/dependency.json)
+- [Documente de analiză HTTP și browser](security_reports/ATTACK-CLASSES.md)
+
+Documentele separate pentru protocoale, browser, implementare și clasele de atac sunt:[^1]
+
+- [HTTP și autentificare](security_reports/WEB-PROTOCOL-AND-AUTH.md)
+- [Securitate client-side](security_reports/CLIENT-SIDE.md)
+- [Implementare în cloud și Docker](security_reports/CLOUD-AND-DEPLOYMENT.md)
+
+[^1]: Aceste documente descriu verificările aplicate în timpul auditului și nu înlocuiesc validarea mediului de implementare.
+
+## Contribuție și instalare
+
+- [Ghid de contribuție](CONTRIBUTION.md)
+- [Ghid de instalare](docs/INSTALATION.md)
+- [Starea licenței](LICENSE.md)
+
 ## Licență
 
 Acest proiect este destinat scopurilor educaționale.
