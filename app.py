@@ -1,8 +1,8 @@
-import sqlite3
-import os
-import time
-import logging
 import hmac
+import logging
+import os
+import sqlite3
+import time
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -42,7 +42,9 @@ def log_request_end(response):
 @app.teardown_request
 def log_request_error(error):
     if error is not None:
-        duration_ms = (time.perf_counter() - getattr(request, "start_time", time.perf_counter())) * 1000
+        duration_ms = (
+            time.perf_counter() - getattr(request, "start_time", time.perf_counter())
+        ) * 1000
         logger.exception(
             "%s %s %s failed after %.2fms",
             request.remote_addr or "-",
@@ -50,6 +52,7 @@ def log_request_error(error):
             request.full_path.rstrip("?"),
             duration_ms,
         )
+
 
 def initialize_database():
     logger.info("Initializing database: %s", DATABASE)
@@ -117,10 +120,12 @@ def initialize_database():
                     (generate_password_hash(legacy_passwords[username]), user_id),
                 )
 
-        users = dict(con.execute(
-            "SELECT username, id FROM users WHERE username IN (?, ?)",
-            ("alina", "cosmin"),
-        ).fetchall())
+        users = dict(
+            con.execute(
+                "SELECT username, id FROM users WHERE username IN (?, ?)",
+                ("alina", "cosmin"),
+            ).fetchall()
+        )
         demo_sensors = [
             ("ALINA-TEMP-01", "Apartament Alina", users["alina"]),
             ("ALINA-UMID-01", "Balcon Alina", users["alina"]),
@@ -151,6 +156,7 @@ def initialize_database():
 
 
 initialize_database()
+
 
 @app.get("/")
 def acasa():
@@ -224,6 +230,7 @@ def logout():
     session.pop("username", None)
     return redirect(url_for("login"))
 
+
 @app.get("/salut/<nume>")
 def salut(nume):
     return f"Salut, {nume}! Bine ai venit în aplicația Flask."
@@ -240,20 +247,24 @@ def senzori(senzor_id):
         return "Nu ai acces la acest senzor", 403
     return render_template("senzor.html", senzor=sensor)
 
+
 @app.get("/senzori")
 def lista_senzori():
     username = session.get("username")
     if username is None:
         return redirect(url_for("login"))
     print("Se generează lista cu senzori...")
-    return render_template("senzori.html",
-                           senzori=citeste_senzori_din_baza_de_date(username))
+    return render_template(
+        "senzori.html", senzori=citeste_senzori_din_baza_de_date(username)
+    )
+
 
 @app.get("/form")
 def afiseaza_formular():
     if "username" not in session:
         return redirect(url_for("login"))
     return render_template("form.html")
+
 
 @app.post("/form")
 def adauga_senzor():
@@ -279,11 +290,11 @@ def adauga_senzor():
             con.commit()
         except sqlite3.IntegrityError:
             return "Codul senzorului există deja", 409
-        print(f"Senzorul cu cod '{cod}' și locație '{locatie}' a fost adăugat în baza de date.")
+        print(
+            f"Senzorul cu cod '{cod}' și locație '{locatie}' a fost adăugat în baza de date."
+        )
 
     return redirect(url_for("lista_senzori"))
-
-
 
 
 def citeste_senzori_din_baza_de_date(username=None):
@@ -336,12 +347,14 @@ def senzorul_apartine_utilizatorului(senzor_id, username):
 
 # Path-uri pentru API RESTful
 
+
 @app.get("/api/senzori")
 def api_lista_senzori():
     username = session.get("username")
     if username is None:
         return jsonify({"error": "Autentificare necesară"}), 401
     return jsonify(citeste_senzori_din_baza_de_date(username))
+
 
 @app.get("/api/senzori/<int:senzor_id>")
 def api_senzor(senzor_id):
@@ -355,6 +368,7 @@ def api_senzor(senzor_id):
         return jsonify({"error": "Nu ai acces la acest senzor"}), 403
     return jsonify(sensor)
 
+
 @app.put("/api/senzori/<int:senzor_id>")
 def api_senzor_update(senzor_id):
     username = session.get("username")
@@ -363,8 +377,7 @@ def api_senzor_update(senzor_id):
     with sqlite3.connect(DATABASE) as con:
         con.row_factory = sqlite3.Row
         row = con.execute(
-            "SELECT id, cod, locatie FROM senzori WHERE id = ?",
-            (senzor_id,)
+            "SELECT id, cod, locatie FROM senzori WHERE id = ?", (senzor_id,)
         ).fetchone()
     if row is None:
         return jsonify({"error": "Senzor inexistent"}), 404
@@ -393,6 +406,7 @@ def api_senzor_update(senzor_id):
             return jsonify({"error": "Codul senzorului există deja"}), 409
 
     return jsonify({"id": senzor_id, "cod": cod, "locatie": locatie})
+
 
 @app.post("/api/senzori")
 def api_creare():
@@ -429,11 +443,14 @@ def api_creare():
         senzor_id = cursor.lastrowid
         con.commit()
 
-    return jsonify({
-        "id": senzor_id,
-        "cod": cod,
-        "locatie": locatie,
-    }), 201
+    return jsonify(
+        {
+            "id": senzor_id,
+            "cod": cod,
+            "locatie": locatie,
+        }
+    ), 201
+
 
 @app.delete("/api/senzori/<int:senzor_id>")
 def api_stergere(senzor_id):
@@ -457,7 +474,6 @@ def api_stergere(senzor_id):
     if cursor.rowcount == 0:
         return jsonify({"error": "Senzor inexistent"}), 404
     return jsonify({"message": f"Senzorul cu ID-ul {senzor_id} a fost șters."}), 200
-
 
 
 # În terminal:

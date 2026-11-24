@@ -126,6 +126,142 @@ jobs:
               });
             }
 
+  python-lint:
+    name: Python lint, modernization, and security
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Install lint tools
+        run: python -m pip install --upgrade ruff bandit
+
+      - name: Run Ruff style and modernization checks
+        id: ruff
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          ruff format --check app.py test.py main.py tests 2>&1 | tee ruff-format.log
+          format_status=${PIPESTATUS[0]}
+          ruff check app.py test.py main.py tests --output-format=concise 2>&1 | tee ruff-check.log
+          check_status=${PIPESTATUS[0]}
+          echo "format_status=$format_status" >> "$GITHUB_OUTPUT"
+          echo "check_status=$check_status" >> "$GITHUB_OUTPUT"
+
+      - name: Run Bandit security scan
+        id: bandit
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          bandit -r app.py test.py main.py tests -ll -f json -o bandit-report.json 2>&1 | tee bandit-report.log
+          echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Add lint summary to job summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Python lint, modernization, and security"
+            echo
+            echo "- Ruff formatting status: ${{ steps.ruff.outputs.format_status }}"
+            echo "- Ruff lint status: ${{ steps.ruff.outputs.check_status }}"
+            echo "- Bandit status: ${{ steps.bandit.outputs.status }}"
+            echo
+            echo "### Ruff style report"
+            cat ruff-check.log ruff-format.log 2>/dev/null || true
+            echo
+            echo "### Bandit security report"
+            cat bandit-report.log 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-lint-report
+          path: |
+            ruff-check.log
+            ruff-format.log
+            bandit-report.json
+            bandit-report.log
+          if-no-files-found: warn
+
+      - name: Fail on lint findings
+        if: steps.ruff.outputs.format_status != '0' || steps.ruff.outputs.check_status != '0' || steps.bandit.outputs.status != '0'
+        run: exit 1
+
+  performance:
+    name: k6 performance test - login page
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: Build and start the Flask container
+        run: |
+          docker compose up --detach --build flask
+
+      - name: Wait for Flask container
+        run: |
+          for i in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8001/login >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker compose logs flask
+          exit 1
+
+      - name: Run k6 login performance test
+        env:
+          LOGIN_URL: http://127.0.0.1:8001/login
+        run: |
+          set -o pipefail
+          k6 run tests/k6/login.js \
+            --summary-export k6-summary.json \
+            --out json=k6-results.json \
+            2>&1 | tee k6-report.log
+
+      - name: Stop Flask container
+        if: always()
+        run: |
+          docker compose logs flask > flask-container.log 2>&1 || true
+          docker compose down --volumes --remove-orphans
+
+      - name: Add k6 report to job summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## k6 performance test - /login"
+            cat k6-report.log 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload k6 reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-login-performance
+          path: |
+            k6-report.log
+            k6-summary.json
+            k6-results.json
+            flask-container.log
+          if-no-files-found: warn
+
   test:
     runs-on: ubuntu-latest
 
@@ -257,6 +393,8 @@ jobs:
     needs:
       - coverage
       - dependency-audit
+      - python-lint
+      - performance
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -270,6 +408,20 @@ jobs:
         with:
           name: code-coverage
           path: reports/coverage
+
+      - name: Download Python lint report
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: python-lint-report
+          path: reports/lint
+
+      - name: Download k6 performance report
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: k6-login-performance
+          path: reports/performance
 
       - name: Download dependency audit report
         continue-on-error: true
@@ -352,6 +504,73 @@ jobs:
               f"- **Status:** {dependency_status}",
               f"- **Vulnerable packages:** {vulnerable_packages}",
               f"- **Known vulnerabilities:** {vulnerability_count}",
+          ])
+
+          ruff_check = pathlib.Path("reports/lint/ruff-check.log")
+          ruff_format = pathlib.Path("reports/lint/ruff-format.log")
+          bandit_json = pathlib.Path("reports/lint/bandit-report.json")
+          ruff_issues = 0
+          if ruff_check.exists():
+              ruff_issues = sum(
+                  1 for line in ruff_check.read_text(encoding="utf-8", errors="replace").splitlines()
+                  if re.search(r"\b(?:F|E|I|UP|B|S)\d+\b", line)
+              )
+          format_clean = not (
+              ruff_format.exists()
+              and "would be reformatted" in ruff_format.read_text(encoding="utf-8", errors="replace")
+          )
+
+          bandit_issues = 0
+          if bandit_json.exists():
+              try:
+                  bandit = json.loads(bandit_json.read_text(encoding="utf-8"))
+                  bandit_issues = len(bandit.get("results", []))
+              except json.JSONDecodeError:
+                  bandit_issues = -1
+
+          report.extend([
+              "",
+              "## Python lint",
+              f"- **Ruff findings:** {ruff_issues}",
+              f"- **Formatting:** {'clean' if format_clean else 'changes requested'}",
+              f"- **Bandit findings:** {'unavailable' if bandit_issues == -1 else bandit_issues}",
+          ])
+
+          k6_summary = pathlib.Path("reports/performance/k6-summary.json")
+          k6_status = "report unavailable"
+          k6_p95 = "unavailable"
+          k6_error_rate = "unavailable"
+          k6_request_count = "unavailable"
+          if k6_summary.exists():
+              try:
+                  summary = json.loads(k6_summary.read_text(encoding="utf-8"))
+                  metrics = summary.get("metrics", {})
+                  duration = metrics.get("http_req_duration", {})
+                  failed = metrics.get("http_req_failed", {})
+                  requests = metrics.get("http_reqs", {})
+
+                  p95 = float(duration.get("p(95)", 0))
+                  error_rate = float(failed.get("value", 1))
+                  request_count = int(requests.get("count", 0))
+
+                  k6_p95 = f"{p95:.2f} ms"
+                  k6_error_rate = f"{100 * error_rate:.2f}%"
+                  k6_status = (
+                      "passing"
+                      if p95 < 500 and error_rate < 0.01
+                      else "threshold exceeded"
+                  )
+                  k6_request_count = str(request_count)
+              except (json.JSONDecodeError, TypeError):
+                  k6_status = "invalid performance report"
+
+          report.extend([
+              "",
+              "## k6 performance - /login",
+              f"- **Status:** {k6_status}",
+              f"- **P95 response time:** {k6_p95}",
+              f"- **HTTP failure rate:** {k6_error_rate}",
+              f"- **Requests:** {k6_request_count}",
           ])
 
           pathlib.Path("pr-quality-summary.md").write_text(

@@ -1,10 +1,10 @@
-from app import app
 import sqlite3
 import uuid
 from pathlib import Path
 
 from werkzeug.security import check_password_hash
 
+from app import app
 
 DATABASE = Path(__file__).resolve().parents[1] / "atelier_senzori.db"
 
@@ -104,8 +104,6 @@ def test_sensor_owner_can_access_sensor():
     assert client.get(f"/api/senzori/{alina_sensor_id}").status_code == 200
 
 
-
-
 def test_password_is_not_stored_in_plain_text():
     with sqlite3.connect(DATABASE) as con:
         user = con.execute(
@@ -129,7 +127,9 @@ def test_public_and_authenticated_html_routes():
     client = app.test_client()
 
     assert client.get("/").status_code == 200
-    assert client.get("/salut/Marian").get_data(as_text=True).startswith("Salut, Marian!")
+    assert (
+        client.get("/salut/Marian").get_data(as_text=True).startswith("Salut, Marian!")
+    )
     assert client.get("/senzori").status_code == 302
     assert client.get("/form").status_code == 302
 
@@ -172,8 +172,13 @@ def test_api_crud_and_validation():
     cod = f"API-{uuid.uuid4().hex}"
 
     assert client.post("/api/senzori", json=[]).status_code == 400
-    assert client.post("/api/senzori", json={"cod": "", "locatie": "Test"}).status_code == 400
-    assert client.post("/api/senzori", json={"cod": cod, "locatie": ""}).status_code == 400
+    assert (
+        client.post("/api/senzori", json={"cod": "", "locatie": "Test"}).status_code
+        == 400
+    )
+    assert (
+        client.post("/api/senzori", json={"cod": cod, "locatie": ""}).status_code == 400
+    )
 
     created = client.post("/api/senzori", json={"cod": cod, "locatie": "Test"})
     assert created.status_code == 201
@@ -188,8 +193,18 @@ def test_api_crud_and_validation():
     )
     assert updated.status_code == 200
 
-    assert client.put(f"/api/senzori/{sensor_id}", json={"cod": "", "locatie": "Updated"}).status_code == 400
-    assert client.put(f"/api/senzori/{sensor_id}", json={"cod": "Updated", "locatie": ""}).status_code == 400
+    assert (
+        client.put(
+            f"/api/senzori/{sensor_id}", json={"cod": "", "locatie": "Updated"}
+        ).status_code
+        == 400
+    )
+    assert (
+        client.put(
+            f"/api/senzori/{sensor_id}", json={"cod": "Updated", "locatie": ""}
+        ).status_code
+        == 400
+    )
     assert client.put(f"/api/senzori/{sensor_id}", json=[]).status_code == 400
 
     assert client.delete(f"/api/senzori/{sensor_id}").status_code == 200
@@ -201,7 +216,10 @@ def test_api_returns_not_found_and_duplicate_conflict():
     client.post("/login", data={"username": "alina", "password": "alina123"})
 
     assert client.get("/api/senzori/999999").status_code == 404
-    assert client.put("/api/senzori/999999", json={"cod": "X", "locatie": "Y"}).status_code == 404
+    assert (
+        client.put("/api/senzori/999999", json={"cod": "X", "locatie": "Y"}).status_code
+        == 404
+    )
     assert client.delete("/api/senzori/999999").status_code == 404
 
     duplicate = client.post(
